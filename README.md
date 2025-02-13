@@ -2,6 +2,12 @@
 
 A flexible tool for importing CSV data into Elasticsearch with automatic field detection and mapping.
 
+## Warning
+
+This tool (probably) won't work for all csv files out of the box. 
+
+Running test mode first is recommended.
+
 ## Features
 
 - 🔍 Automatic CSV delimiter detection
