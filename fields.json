@@ -1,0 +1,27 @@
+[
+    {
+        "name": "User Id",
+        "required": true,
+        "csv_name": "userid"
+    },
+    {
+        "name": "Email",
+        "required": true,
+        "csv_name": "email"
+    },
+    {
+        "name": "Phone",
+        "required": false,
+        "csv_name": "phonenum"
+    },
+    {
+        "name": "Mailing address",
+        "required": false,
+        "csv_name": "address"
+    },
+    {
+        "name": "Date of birth",
+        "required": false,
+        "csv_name": "dob"
+    }
+] 

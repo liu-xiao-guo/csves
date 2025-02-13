@@ -1,0 +1,55 @@
+name: Release CsvES Binary
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.23"
+
+      - name: Build binaries
+        run: |
+          BINARY_NAME="csves"
+          VERSION=${GITHUB_REF#refs/tags/}
+          BUILD_PATH="cmd/csves/main.go"
+          
+          # Build for Linux
+          GOOS=linux GOARCH=amd64 go build -o "${BINARY_NAME}-linux-amd64" ${BUILD_PATH}
+          tar czf "${BINARY_NAME}-linux-amd64.tar.gz" "${BINARY_NAME}-linux-amd64"
+          
+          # Build for macOS (Intel)
+          GOOS=darwin GOARCH=amd64 go build -o "${BINARY_NAME}-darwin-amd64" ${BUILD_PATH}
+          tar czf "${BINARY_NAME}-darwin-amd64.tar.gz" "${BINARY_NAME}-darwin-amd64"
+          
+          # Build for macOS (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 go build -o "${BINARY_NAME}-darwin-arm64" ${BUILD_PATH}
+          tar czf "${BINARY_NAME}-darwin-arm64.tar.gz" "${BINARY_NAME}-darwin-arm64"
+          
+          # Build for Windows
+          GOOS=windows GOARCH=amd64 go build -o "${BINARY_NAME}-windows-amd64.exe" ${BUILD_PATH}
+          zip "${BINARY_NAME}-windows-amd64.zip" "${BINARY_NAME}-windows-amd64.exe"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            csves-linux-amd64.tar.gz
+            csves-darwin-amd64.tar.gz
+            csves-darwin-arm64.tar.gz
+            csves-windows-amd64.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
