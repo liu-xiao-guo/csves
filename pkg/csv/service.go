@@ -1,140 +1,221 @@
-package elasticsearch
+package csv
 
 import (
-	"bytes"
-	"encoding/json"
+	"bufio"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
-	"io/ioutil"
+	"unicode"
 
 	"csves/pkg/config"
 	"csves/pkg/models"
-
-	"github.com/elastic/go-elasticsearch/v8"
 )
 
-// Service handles Elasticsearch operations
-type Service struct {
-	client *elasticsearch.Client
-	config *config.Config
+// cleanString removes leading/trailing spaces and control characters
+func cleanString(s string) string {
+	// First trim spaces and control characters
+	s = strings.TrimFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	})
+
+	// Then normalize internal spaces (replace multiple spaces with single space)
+	return strings.Join(strings.Fields(s), " ")
 }
 
-// NewService creates a new Elasticsearch service
-func NewService(cfg *config.Config) (*Service, error) {
+// Service handles CSV operations
+type Service struct {
+	config *config.Config
+	reader *csv.Reader
+	file   *os.File
+}
 
-	var esCfg elasticsearch.Config
+// DetectDelimiter tries to detect the CSV delimiter by checking common ones
+func DetectDelimiter(filePath string) (rune, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return ',', fmt.Errorf("error opening file: %w", err)
+	}
+	defer file.Close()
 
-	if cfg.CertPath == "" {
-		esCfg = elasticsearch.Config{
-			Addresses: []string{cfg.ElasticsearchURL},
-			Username: cfg.UserName,
-			Password: cfg.Password,
-		}	
-	} else {
-		cert, _ := ioutil.ReadFile(cfg.CertPath)
- 
-		esCfg = elasticsearch.Config{
-			Addresses: []string{cfg.ElasticsearchURL},
-			Username: cfg.UserName,
-			Password: cfg.Password,
-			CACert: cert,
+	// Read first line to analyze
+	scanner := bufio.NewScanner(file)
+	if !scanner.Scan() {
+		return ',', fmt.Errorf("empty file")
+	}
+	firstLine := scanner.Text()
+
+	// Common delimiters to check
+	delimiters := []rune{',', ';', '\t', '|'}
+	maxCount := 0
+	bestDelimiter := ','
+
+	for _, d := range delimiters {
+		count := strings.Count(firstLine, string(d))
+		if count > maxCount {
+			maxCount = count
+			bestDelimiter = d
 		}
 	}
 
+	return bestDelimiter, nil
+}
 
-	client, err := elasticsearch.NewClient(esCfg)
+// DetectFields detects available fields from CSV header
+func DetectFields(header []string) []models.FieldConfig {
+	var fields []models.FieldConfig
+	for _, h := range header {
+		name := cleanString(h)
+		if name == "" {
+			continue // Skip empty field names
+		}
+		fields = append(fields, models.FieldConfig{
+			Name:     name,
+			CSVName:  name,
+			Required: false,
+		})
+	}
+	return fields
+}
+
+// NewService creates a new CSV service
+func NewService(cfg *config.Config) (*Service, error) {
+	file, err := os.Open(cfg.CSVFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("error creating Elasticsearch client: %w", err)
+		return nil, fmt.Errorf("error opening CSV file: %w", err)
+	}
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true // Enable built-in CSV trimming
+
+	if cfg.DelimiterChar == 0 {
+		// Auto-detect delimiter if not specified
+		delimiter, err := DetectDelimiter(cfg.CSVFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("error detecting delimiter: %w", err)
+		}
+		reader.Comma = delimiter
+		fmt.Printf("Detected delimiter: '%c'\n", delimiter)
+	} else {
+		reader.Comma = cfg.DelimiterChar
 	}
 
 	return &Service{
-		client: client,
 		config: cfg,
+		reader: reader,
+		file:   file,
 	}, nil
 }
 
-// Setup ensures the index exists with proper mapping
-func (s *Service) Setup() error {
-	// Check if index exists
-	res, err := s.client.Indices.Exists([]string{s.config.IndexName})
-	if err != nil {
-		return fmt.Errorf("error checking index existence: %w", err)
-	}
-
-	if res.StatusCode == 404 {
-		// Create index with basic mapping for source_csv
-		mapping := `{
-			"mappings": {
-				"properties": {
-					"source_csv": {
-						"type": "keyword"
-					}
-				},
-				"dynamic": true
-			}
-		}`
-
-		res, err = s.client.Indices.Create(
-			s.config.IndexName,
-			s.client.Indices.Create.WithBody(strings.NewReader(mapping)),
-		)
-		if err != nil {
-			return fmt.Errorf("error creating index: %w", err)
-		}
-		if res.IsError() {
-			return fmt.Errorf("error creating index: %s", res.String())
-		}
-	}
-
-	return nil
+// Close closes the CSV file
+func (s *Service) Close() error {
+	return s.file.Close()
 }
 
-// BulkIndex indexes multiple documents in bulk
-func (s *Service) BulkIndex(documents []models.Document) error {
-	var buf bytes.Buffer
-
-	for _, doc := range documents {
-		meta := map[string]interface{}{
-			"index": map[string]interface{}{
-				"_index": s.config.IndexName,
-			},
-		}
-
-		if err := json.NewEncoder(&buf).Encode(meta); err != nil {
-			return fmt.Errorf("error encoding metadata: %w", err)
-		}
-
-		if err := json.NewEncoder(&buf).Encode(doc.Fields); err != nil {
-			return fmt.Errorf("error encoding document: %w", err)
-		}
-	}
-
-	res, err := s.client.Bulk(bytes.NewReader(buf.Bytes()))
+// ProcessHeader processes the CSV header and maps column names to indices
+func (s *Service) ProcessHeader() (map[string]int, error) {
+	header, err := s.reader.Read()
 	if err != nil {
-		return fmt.Errorf("error bulk indexing: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("bulk indexing failed: %s", res.String())
+		return nil, fmt.Errorf("error reading CSV header: %w", err)
 	}
 
-	var bulkResponse map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&bulkResponse); err != nil {
-		return fmt.Errorf("error parsing bulk response: %w", err)
+	// Clean header fields
+	for i, h := range header {
+		header[i] = cleanString(h)
 	}
 
-	if bulkResponse["errors"].(bool) {
-		fmt.Println("Some documents failed to index")
-		items := bulkResponse["items"].([]interface{})
-		for _, item := range items {
-			indexResp := item.(map[string]interface{})["index"].(map[string]interface{})
-			if indexResp["error"] != nil {
-				fmt.Printf("Error: %v\n", indexResp["error"])
+	// Detect fields if not provided
+	if len(s.config.Fields) == 0 {
+		s.config.Fields = DetectFields(header)
+		fmt.Println("Detected fields:", s.config.Fields)
+	}
+
+	headerMap := make(map[string]int)
+	for i, column := range header {
+		if column != "" { // Skip empty column names
+			headerMap[strings.ToLower(column)] = i
+		}
+	}
+
+	// Validate required fields if any
+	for _, field := range s.config.Fields {
+		if field.Required {
+			if _, exists := headerMap[strings.ToLower(field.CSVName)]; !exists {
+				return nil, fmt.Errorf("required field '%s' not found in CSV header", field.CSVName)
 			}
 		}
-		return fmt.Errorf("some documents failed to index")
 	}
 
-	return nil
+	fmt.Println("CSV Header mapping:", headerMap)
+	return headerMap, nil
+}
+
+// ProcessRecords processes CSV records and returns documents
+func (s *Service) ProcessRecords(headerMap map[string]int) ([]models.Document, error) {
+	var documents []models.Document
+
+	// Get the base filename without path
+	sourceFile := filepath.Base(s.config.CSVFilePath)
+
+	for {
+		record, err := s.reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("Warning: Error reading CSV record: %s", err)
+			continue
+		}
+
+		// Clean all record values
+		for i, v := range record {
+			record[i] = cleanString(v)
+		}
+
+		doc := models.NewDocument()
+		// Set fields based on configuration
+		for _, field := range s.config.Fields {
+			if idx, exists := headerMap[strings.ToLower(field.CSVName)]; exists {
+				value := record[idx]
+				if value != "" { // Only set non-empty values
+					doc.SetField(field.Name, value)
+				}
+			}
+		}
+
+		// Add source CSV filename
+		doc.SetField("source_csv", sourceFile)
+
+		documents = append(documents, *doc)
+	}
+
+	return documents, nil
+}
+
+// PrintDocuments prints documents in a readable format
+func (s *Service) PrintDocuments(documents []models.Document, printAll bool) {
+	if printAll {
+		fmt.Println("Test Mode - Printing all processed records:")
+		for i, doc := range documents {
+			fmt.Printf("Record %d:\n", i+1)
+			for _, field := range s.config.Fields {
+				value := doc.GetField(field.Name)
+				if value != "" { // Only print non-empty values
+					fmt.Printf("  %s: %s\n", field.Name, value)
+				}
+			}
+			// Always print source CSV
+			fmt.Printf("  source_csv: %s\n", doc.GetField("source_csv"))
+			fmt.Println()
+		}
+	} else {
+		fmt.Println("Sample of processed records:")
+		for i := 0; i < 2 && i < len(documents); i++ {
+			fmt.Printf("Fields: %+v\n", documents[i].Fields)
+		}
+	}
+	fmt.Printf("Total records processed: %d\n", len(documents))
 }

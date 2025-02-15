@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"io/ioutil"
 
 	"csves/pkg/config"
 	"csves/pkg/models"
@@ -20,9 +21,26 @@ type Service struct {
 
 // NewService creates a new Elasticsearch service
 func NewService(cfg *config.Config) (*Service, error) {
-	esCfg := elasticsearch.Config{
-		Addresses: []string{cfg.ElasticsearchURL},
+
+	var esCfg elasticsearch.Config
+
+	if cfg.CertPath == "" {
+		esCfg = elasticsearch.Config{
+			Addresses: []string{cfg.ElasticsearchURL},
+			Username: cfg.UserName,
+			Password: cfg.Password,
+		}	
+	} else {
+		cert, _ := ioutil.ReadFile(cfg.CertPath)
+ 
+		esCfg = elasticsearch.Config{
+			Addresses: []string{cfg.ElasticsearchURL},
+			Username: cfg.UserName,
+			Password: cfg.Password,
+			CACert: cert,
+		}
 	}
+
 
 	client, err := elasticsearch.NewClient(esCfg)
 	if err != nil {
