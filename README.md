@@ -71,10 +71,13 @@ go build -o csves cmd/csves/main.go
 You can also configure the tool using environment variables in a `.env` file:
 
 ```env
-ELASTICSEARCH_URL=http://localhost:9200
-INDEX_NAME=my_index
-CSV_FILE_PATH=data.csv
+ELASTICSEARCH_URL=https://localhost:9200
+INDEX_NAME=csv_test
+CSV_FILE_PATH=./example.csv
+USER_NAME=elastic
+PASSWORD="y9NWnPq0++V=WxMXxSmr"
 FIELD_CONFIG_PATH=fields.json
+ELASTICSEARCH_CERT_PATH=/Users/liuxg/elastic/elasticsearch-8.17.1/config/certs/http_ca.crt
 ```
 
 ### Field Configuration
