@@ -79,6 +79,7 @@ PASSWORD="y9NWnPq0++V=WxMXxSmr"
 FIELD_CONFIG_PATH=fields.json
 ELASTICSEARCH_CERT_PATH=/Users/liuxg/elastic/elasticsearch-8.17.1/config/certs/http_ca.crt
 ```
+If you use SSL in your connection, you have to define ELASTICSEARCH_CERT_PATH. Otherwise, just leave it as "".
 
 ### Field Configuration
 
