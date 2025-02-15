@@ -23,6 +23,9 @@ type Config struct {
 	Fields           []models.FieldConfig
 	FieldConfigPath  string
 	SelectedFields   []string
+	UserName		 string
+	Password		 string
+	CertPath		 string
 }
 
 func LoadConfig() (*Config, error) {
@@ -39,6 +42,19 @@ func LoadConfig() (*Config, error) {
 	selectedFields := flag.String("select", "", "Comma-separated list of fields to include (empty for all fields)")
 	delimiter := flag.String("delimiter", "", "CSV delimiter character (auto-detect if not specified)")
 	flag.BoolVar(&config.TestMode, "test", false, "Test mode - only parse and print documents without connecting to Elasticsearch")
+	flag.StringVar(&config.UserName, "username", getEnvOrDefault("USER_NAME", "elastic"), "User name")
+	flag.StringVar(&config.Password, "password", getEnvOrDefault("PASSWORD", "123456"), "Password")
+	flag.StringVar(&config.CertPath, "certpath", getEnvOrDefault("ELASTICSEARCH_CERT_PATH", "./http_ca.crt"), "Password")
+
+	fmt.Println("es-url:", config.ElasticsearchURL)
+	fmt.Println("index:", config.IndexName)
+	fmt.Println("csv:", config.CSVFilePath)
+	fmt.Println("fields:", config.FieldConfigPath)
+	fmt.Println("fields:", config.FieldConfigPath)
+	fmt.Println("test:", config.TestMode)
+	fmt.Println("username:", config.UserName)
+	fmt.Println("password:", config.Password)
+	fmt.Println("certpath:", config.CertPath)
 
 	flag.Parse()
 

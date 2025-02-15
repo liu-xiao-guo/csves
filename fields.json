@@ -1,27 +1,17 @@
 [
     {
-        "name": "User Id",
+        "name": "name",
         "required": true,
-        "csv_name": "userid"
+        "csv_name": "name"
     },
     {
-        "name": "Email",
+        "name": "age",
         "required": true,
-        "csv_name": "email"
+        "csv_name": "age"
     },
     {
-        "name": "Phone",
-        "required": false,
-        "csv_name": "phonenum"
-    },
-    {
-        "name": "Mailing address",
-        "required": false,
-        "csv_name": "address"
-    },
-    {
-        "name": "Date of birth",
-        "required": false,
-        "csv_name": "dob"
+        "name": "sex",
+        "required": true,
+        "csv_name": "sex"
     }
 ] 
